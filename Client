@@ -1,0 +1,227 @@
+
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.UnknownHostException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+
+public class Client extends Frame implements Runnable
+{
+	boolean connect_OK = false;
+	Thread readMsg = null;
+	Socket s;
+	
+	TextField idField, passwordField, nameField, inputField;
+	Button loginBut, connBut, deconnBut;
+	TextArea output;
+
+	final int port = 2018;
+	DataInputStream dis;
+	DataOutputStream dos;
+	String HOST, data;
+
+	final static int MAXBUFFER = 512;
+	public Client()
+	{
+		this.HOST = "127.0.0.1";
+
+		Panel p1 = new Panel();
+		Panel p2 = new Panel();
+		Panel p3 = new Panel();
+
+		p1.setLayout(new GridLayout(1,4,5,5));
+		p1.add(new Label("로그인", Label.LEFT));
+		p1.add(idField = new TextField("ID"), BorderLayout.EAST);
+		p1.add(passwordField = new TextField("PASSWORD"), BorderLayout.EAST);
+		p1.add(loginBut = new Button("로그인"), BorderLayout.EAST);
+
+		p2.setLayout(new GridLayout(2,2,5,5));
+		p2.add(new Label("이름", Label.LEFT));
+		p2.add(nameField = new TextField("이름없음"), BorderLayout.EAST);
+		p2.add(connBut = new Button("연결"), BorderLayout.WEST);
+		p2.add(deconnBut = new Button("해제"), BorderLayout.EAST);
+		connBut.setEnabled(false);
+		deconnBut.setEnabled(false);
+
+		p3.setLayout(new BorderLayout());
+		p3.add(output = new TextArea(20,40), BorderLayout.CENTER);
+		p3.add(inputField = new TextField(), BorderLayout.SOUTH);
+		inputField.setEditable(true);
+
+		this.add(p1, BorderLayout.NORTH);
+		this.add(p2, BorderLayout.CENTER);
+		this.add(p3, BorderLayout.SOUTH);
+
+		loginBut.addActionListener(new LoginHandler());
+		connBut.addActionListener(new ConnectHandler());
+		deconnBut.addActionListener(new DeconnectHandler());
+		inputField.addActionListener(new SendListener());
+
+		
+		setSize(400,450);
+		setVisible(true);
+	}
+
+	public static void main(String[] args) 
+	{
+		new Client();
+	}
+
+	class LoginHandler implements ActionListener
+	{
+		public void actionPerformed(ActionEvent ae)
+		{
+			byte buffer[] = new byte[MAXBUFFER];
+			int port = 2001;
+			
+			try
+			{ 
+				InetAddress inetaddr = InetAddress.getByName("127.0.0.1");
+				DatagramSocket socket = new DatagramSocket();
+				DatagramPacket send_packet, recv_packet;
+				BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+				
+				while(true)
+				{
+					String data = idField.getText() + " " + nameField.getText() + " " + passwordField.getText();
+					buffer = data.getBytes();
+					
+					send_packet = new DatagramPacket(buffer, buffer.length, inetaddr, port);
+					socket.send(send_packet);
+					
+					recv_packet = new DatagramPacket(buffer, buffer.length);
+					socket.receive(recv_packet);;
+					
+					data = new String(recv_packet.getData(), 0, recv_packet.getLength());
+					
+					if (data.equals("성공"))
+					{
+						output.append("로그인 성공. 연결 버튼을 눌러 접속하세요\n");
+						connBut.setEnabled(true);
+						deconnBut.setEnabled(true);
+						break;
+					}
+					
+					else
+					{
+						output.append("로그인 실패. ID와 비밀번호를 확인하세요\n");
+						break;
+					}
+				}
+			}
+			catch(IOException ioe) {
+				
+			}			
+			catch(NumberFormatException nfe) {
+				
+			}
+		}
+	}
+
+	class ConnectHandler implements ActionListener
+	{
+		public void actionPerformed(ActionEvent ae)
+		{
+			if (!connect_OK)
+			{
+				connect_OK = true;
+
+				try
+				{
+					s = new Socket(HOST, port);
+					dis = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+					dos = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+				} catch (IOException ioe) {
+					output.append("소켓 생성 실패");
+					return;
+				}
+
+				output.append("서버에 접속하였습니다.\n");
+
+				makeReadMessageThread();
+				readMsg.start();
+
+				try
+				{
+					dos.writeUTF(nameField.getText() + "님께서 접속하였습니다.");
+					dos.flush();
+				} catch(IOException ioe) {
+					output.append("접속실패\n");
+				}
+
+			} else
+				output.append("이미 접속하였습니다.\n");
+		}
+	}
+
+	void makeReadMessageThread()
+	{
+		readMsg = new Thread(this);
+	}
+
+	public void run()
+	{
+		data = null;
+		System.out.println("데이터 수신을 위한 쓰레드 실행");
+
+		while (connect_OK)
+		{
+			try
+			{
+				data = dis.readUTF() + '\n';
+				output.append(data);
+			} catch (IOException ioe) {}
+		}
+	}
+
+	class SendListener implements ActionListener
+	{
+		public void actionPerformed(ActionEvent ae)
+		{
+			String msg = "[" + nameField.getText() + "]" + inputField.getText();
+
+			try
+			{
+				dos.writeUTF(msg);
+				dos.flush();
+			} catch (IOException e) {}
+
+			inputField.setText("");
+		}
+	}
+
+	class DeconnectHandler implements ActionListener
+	{
+		public void actionPerformed(ActionEvent ae)
+		{
+			connect_OK = false;
+
+			try
+			{
+				dos.writeUTF(nameField.getText() + " Bye");
+				dos.flush();
+			} catch (IOException ioe) {}
+
+			try
+			{
+				dos.close();
+				dis.close();
+				s.close();
+			} catch (IOException ioe) {}
+		}
+	}
+}
