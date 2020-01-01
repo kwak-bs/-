@@ -1,0 +1,94 @@
+
+import java.net.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.io.*;
+
+
+public class UDP_Login
+{
+	DatagramSocket socket; 
+
+	String driverClass = "com.mysql.jdbc.Driver";
+	String connectString = "jdbc:mysql://localhost:3306/dbtest";
+	String user = "root";
+	String pass = "apmsetup";
+	int port = 2001;
+	int count = 1;
+	Connection con; Statement stmt = null;
+	final int MAXBUFFER = 512;
+
+	public static void main(String[] args) 
+	{
+		new UDP_Login().work();
+	}
+
+	void work()
+	{
+		byte buffer[] = new byte[MAXBUFFER];
+
+		try 
+		{
+			Class.forName(driverClass);
+			con = DriverManager.getConnection(connectString, user, pass);
+			stmt = con.createStatement();
+		} catch(Exception e) {
+			System.out.println(e);
+		}
+
+		System.out.println("로그인 서버 시작");
+		String query = "SELECT id, name, password FROM test";
+
+		try
+		{
+			ResultSet rs = stmt.executeQuery(query);
+			socket = new DatagramSocket(port);
+			DatagramPacket packet = null;
+			String DB_information;
+
+			while(true)
+			{
+				packet = new DatagramPacket(buffer, buffer.length);
+				socket.receive(packet);
+				DB_information = new String(packet.getData(), 0, packet.getLength());
+
+				while(rs.next())   
+				{  
+					String cpData[] = DB_information.split(" ");
+					if (Integer.parseInt(cpData[0]) == rs.getInt(1)
+							&& cpData[1].equals(rs.getString(2)) 
+							&& cpData[2].equals(rs.getString(3)))
+						DB_information = "성공";        
+
+					if(DB_information.equals("성공"))
+					{
+						packet.setData(DB_information.getBytes());
+						socket.send(packet);
+						break;
+					}
+					count++;
+				}
+				if(!DB_information.equals("성공"))
+				{
+					DB_information = "실패";
+					packet.setData(DB_information.getBytes());
+					socket.send(packet);
+					
+				}
+				for(int i = 0; i < count; i++)   
+					rs.previous();
+				
+				DB_information = "실패"; 
+			} 
+		} catch(SQLException e) {
+			e.printStackTrace();
+		} catch(BindException be) {
+			System.out.println(be);
+		} catch(IOException ioe) {
+			System.out.println(ioe);
+		} 
+	}
+}
