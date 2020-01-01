@@ -1,0 +1,115 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class TCP_Chat {
+	ServerSocket ss;
+	Socket s;
+	Vector client = new Vector(100);
+	int port = 2018;
+	
+	public static void main(String[] args) {
+		new TCP_Chat();
+	}
+	
+	TCP_Chat(){
+		try {
+			ss = new ServerSocket(port);
+		} catch(IOException ioe){
+			ioe.printStackTrace();
+		}
+		
+		System.out.println("채팅 서버 시작");
+		
+		try {
+			while(true) {
+				s = ss.accept();
+				
+				ManageClient m = new ManageClient(s);
+				client.addElement(m);
+				
+				System.out.println("새로운 클라이언트 접속. 참가자 수: " + client.size() +"명");
+				
+				m.start();
+			}
+		} catch(IOException ioe) {
+			ioe.printStackTrace();
+		}
+	}
+	
+	class ManageClient extends Thread{
+		Socket s;
+		DataInputStream dis;
+		DataOutputStream dos;
+		
+		public ManageClient(Socket s) {
+			this.s = s;
+			
+			try {
+				dis = new DataInputStream(s.getInputStream());
+				dos = new DataOutputStream(s.getOutputStream());
+			} catch(IOException ioe) {
+				ioe.printStackTrace();
+			}
+		}
+		
+		public void run() {
+			String msg;
+			
+			while(true) {
+				try {
+					msg = dis.readUTF();
+				} catch(IOException ioe) {
+					ioe.printStackTrace();
+					exitClient(this);
+					return;
+				}
+				
+				int idx = msg.indexOf("Bye");
+				
+				if(idx >= 0) {
+					broadcast(msg.subSequence(0,  idx) + "님이 채팅을 종료했습니다.");
+					exitClient(this);
+					return;
+				} else {
+					broadcast(msg);
+				}
+				yield();
+			}
+		}
+	}
+	
+	public void broadcast(String msg) {
+		int numOfConnect = client.size();
+		
+		for(int idx = 0; idx < numOfConnect; idx++) {
+			try {
+				ManageClient m = (ManageClient) client.elementAt(idx);
+				
+				m.dos.writeUTF(msg);
+				m.dos.flush();
+			} catch(IOException ioe) {
+				ioe.printStackTrace();
+			}
+		}
+	}
+	
+	public void exitClient(ManageClient c) {
+		int i = client.indexOf(c);
+		
+		if(i >= 0) {
+			client.removeElementAt(i);
+			
+			try {
+				if(c.dis != null) c.dis.close();
+				if(c.dos != null) c.dos.close();
+				if(c.s != null) c.s.close();
+			} catch(IOException ioe) {
+				ioe.printStackTrace();
+			}
+			System.out.println("클라이언트 종료. 현재 참가자: " + client.size());
+		} else {
+			System.out.println("참가자가 없습니다.");
+		}
+	}
+}
